@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Spark - 3D Interactive Particle System</title>
+    
+    <!-- Tailwind CSS for modern responsive layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome for sleek modern icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts for refined typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #030306;
+            overflow: hidden;
+            margin: 0;
+        }
+        /* Custom scrollbar for control panel */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+        /* Glassmorphism custom styling with smooth transitions */
+        .glass-panel {
+            background: rgba(10, 10, 20, 0.8);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 800px;
+        }
+        /* Pulse Glow Effect for hand-matching state */
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 15px rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(139, 92, 246, 0.5); border-color: rgba(139, 92, 246, 0.6); }
+        }
+        .glow-active {
+            animation: pulse-glow 2s infinite;
+        }
+        /* Collapsible panel animations */
+        .panel-collapsed {
+            max-height: 52px !important;
+            overflow: hidden;
+        }
+        .panel-hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(20px) scale(0.95);
+        }
+    </style>
+</head>
+<body class="text-slate-100 select-none">
+
+    <!-- External scripts for Hand Detection and 3D rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <!-- Main interactive background canvas for Three.js -->
+    <canvas id="webgl-canvas" class="absolute inset-0 w-full h-full z-0"></canvas>
+
+    <!-- App Overlay UI -->
+    <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 md:p-6 z-10">
+        
+        <!-- Header area with title and camera indicator -->
+        <header class="flex justify-between items-start w-full pointer-events-auto">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-extrabold tracking-wider bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent flex items-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles text-violet-400"></i> Cosmic Spark
+                </h1>
+                <p class="text-xs text-slate-400 mt-1 uppercase tracking-widest hidden sm:block">AI 手勢感應 3D 粒子魔鏡</p>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <!-- Status Box -->
+                <div id="gesture-status" class="glass-panel px-4 py-2 rounded-full flex items-center gap-2 text-xs font-semibold shadow-lg transition-all duration-300">
+                    <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                    <span id="status-text">相機未啟動</span>
+                </div>
+                <!-- Toggle Camera Panel Button -->
+                <button id="btn-toggle-camera" class="glass-panel w-10 h-10 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all pointer-events-auto shadow-md" title="顯示/隱藏視訊窗">
+                    <i id="camera-panel-icon" class="fa-solid fa-eye"></i>
+                </button>
+                <!-- Fullscreen Button -->
+                <button id="btn-fullscreen" class="glass-panel w-10 h-10 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all pointer-events-auto shadow-md" title="全螢幕模式">
+                    <i class="fa-solid fa-expand"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Center notification toast for tutorial -->
+        <div class="self-center glass-panel px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-sm max-w-md pointer-events-auto transform translate-y-[-100px] sm:translate-y-0 transition-all duration-500 border border-violet-500/20" id="tutorial-toast">
+            <div class="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400">
+                <i class="fa-solid fa-hand"></i>
+            </div>
+            <div>
+                <p class="font-semibold text-slate-200">手勢互動教學</p>
+                <p class="text-xs text-slate-400 mt-0.5">舉起手掌即可觸發 AI 手勢偵測，張合控制旋轉速度</p>
+            </div>
+            <button onclick="document.getElementById('tutorial-toast').remove()" class="text-slate-400 hover:text-white ml-2">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- Main Dashboard: Bottom control bar and sidebar -->
+        <div class="w-full flex flex-col md:flex-row gap-4 items-end justify-between mt-auto">
+            
+            <!-- Left panel: Shape controller and parameters -->
+            <div id="left-panel" class="w-full md:w-[380px] glass-panel rounded-3xl p-5 pointer-events-auto flex flex-col gap-4 max-h-[70vh] md:max-h-[550px] overflow-y-auto shadow-2xl transition-all duration-300">
+                <!-- Collapsible Header for Left Panel -->
+                <div class="flex justify-between items-center cursor-pointer pb-2 border-b border-white/5" id="left-panel-header">
+                    <h2 class="text-sm font-bold tracking-wider text-slate-200 uppercase flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-violet-400"></i> 控制面板 (可折疊)
+                    </h2>
+                    <button class="text-slate-400 hover:text-white transition duration-200">
+                        <i id="left-panel-icon" class="fa-solid fa-chevron-down"></i>
+                    </button>
+                </div>
+
+                <!-- Left Panel Collapsible Body Container -->
+                <div id="left-panel-body" class="flex flex-col gap-4 transition-all duration-300">
+                    <div>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-violet-400/80 flex items-center gap-2 mb-3">
+                            <i class="fa-solid fa-shapes"></i> 1. 選擇粒子形態
+                        </h3>
+                        <div class="grid grid-cols-3 gap-2" id="shape-grid">
+                            <button data-shape="heart" class="shape-btn px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-violet-500/20 hover:border-violet-500/50 active:scale-95 transition-all text-xs font-semibold flex flex-col items-center gap-1 text-slate-300">
+                                <i class="fa-solid fa-heart text-lg text-rose-500"></i> 立體愛心
+                            </button>
+                            <button data-shape="saturn" class="shape-btn px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-violet-500/20 hover:border-violet-500/50 active:scale-95 transition-all text-xs font-semibold flex flex-col items-center gap-1 text-slate-300">
+                                <i class="fa-solid fa-circle-dot text-lg text-amber-400"></i> 土星
+                            </button>
+                            <button data-shape="flower" class="shape-btn px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-violet-500/20 hover:border-violet-500/50 active:scale-95 transition-all text-xs font-semibold flex flex-col items-center gap-1 text-slate-300">
+                                <i class="fa-solid fa-clover text-lg text-emerald-400"></i> 幸運草
+                            </button>
+                            <button data-shape="fireworks" class="shape-btn px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-violet-500/20 hover:border-violet-500/50 active:scale-95 transition-all text-xs font-semibold flex flex-col items-center gap-1 text-slate-300">
+                                <i class="fa-solid fa-fire text-lg text-orange-400"></i> 3D 煙火
+                            </button>
+                            <button data-shape="sphere" class="shape-btn px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-violet-500/20 hover:border-violet-500/50 active:scale-95 transition-all text-xs font-semibold flex flex-col items-center gap-1 text-slate-300">
+                                <i class="fa-solid fa-globe text-lg text-cyan-400"></i> 星體
+                            </button>
+                            <button data-shape="dna" class="shape-btn px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-violet-500/20 hover:border-violet-500/50 active:scale-95 transition-all text-xs font-semibold flex flex-col items-center gap-1 text-slate-300">
+                                <i class="fa-solid fa-dna text-lg text-indigo-400"></i> 科技 DNA
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Color adjustment -->
+                    <div class="border-t border-white/5 pt-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-violet-400/80 flex items-center justify-between mb-3">
+                            <span class="flex items-center gap-2"><i class="fa-solid fa-palette"></i> 2. 顏色與發光調配</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="rainbow-toggle" class="sr-only peer" checked>
+                                <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-cyan-500 peer-checked:to-purple-500"></div>
+                                <span class="ms-2 text-xs font-medium text-slate-400">時光動態漸變</span>
+                            </label>
+                        </h3>
+                        <div class="flex items-center gap-3">
+                            <div class="relative w-12 h-12 rounded-xl overflow-hidden border border-white/20 active:scale-95 transition-all shadow-inner">
+                                <input type="color" id="particle-color" value="#00d2ff" class="absolute inset-0 w-full h-full scale-150 cursor-pointer bg-transparent border-0">
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-xs font-semibold text-slate-300">單一自訂色</p>
+                                <p class="text-[10px] text-slate-500 mt-0.5">關閉漸變時，系統將呈現此處選擇的靜態單色</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Parameters Sliders -->
+                    <div class="border-t border-white/5 pt-4 flex flex-col gap-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-violet-400/80 flex items-center gap-2">
+                            <i class="fa-solid fa-sliders"></i> 3. 精細參數調整
+                        </h3>
+                        
+                        <!-- Particle Size -->
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-300 mb-1">
+                                <span>粒子尺寸</span>
+                                <span id="val-p-size">3.5</span>
+                            </div>
+                            <input type="range" id="slider-p-size" min="1" max="10" step="0.5" value="3.5" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-violet-500">
+                        </div>
+
+                        <!-- Auto Rotation Speed -->
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-300 mb-1">
+                                <span>基礎旋轉速度</span>
+                                <span id="val-rot-speed">1.0x</span>
+                            </div>
+                            <input type="range" id="slider-rot-speed" min="0" max="3" step="0.1" value="1" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-violet-500">
+                        </div>
+
+                        <!-- Simulation Slide fallback when there is no webcam -->
+                        <div id="simulation-container" class="mt-2 bg-violet-500/10 p-3 rounded-xl border border-violet-500/20">
+                            <div class="flex justify-between text-xs text-violet-300 font-bold mb-1">
+                                <span><i class="fa-solid fa-gamepad"></i> 模擬手掌張合度</span>
+                                <span id="val-openness">50%</span>
+                            </div>
+                            <input type="range" id="slider-openness" min="0" max="100" value="50" class="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-violet-400">
+                            <p class="text-[10px] text-slate-400 mt-1.5"><i class="fa-solid fa-info-circle"></i> 開啟相機後將自動切換為實時手勢偵測。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Camera Capture & MediaPipe Visualization -->
+            <div id="right-panel" class="w-full md:w-[280px] flex flex-col gap-3 pointer-events-auto items-end transition-all duration-300">
+                <!-- Webcam tracking viewport -->
+                <div class="relative w-44 h-32 md:w-full md:h-48 rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-black flex items-center justify-center group">
+                    <!-- Source video (no CSS mirror → MediaPipe always gets raw frames) -->
+                    <video id="webcam-video" playsinline class="absolute inset-0 w-full h-full object-cover transform scale-x-[-1] opacity-40 mix-blend-screen" style="display: none;"></video>
+                    <canvas id="skeleton-canvas" class="absolute inset-0 w-full h-full object-cover transform scale-x-[-1] z-20"></canvas>
+                    
+                    <div id="camera-loading" class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950 z-10 transition-opacity duration-300 text-center p-3">
+                        <i class="fa-solid fa-circle-notch animate-spin text-2xl text-violet-500"></i>
+                        <p class="text-xs text-slate-400 font-semibold">正在等待鏡頭授權...</p>
+                    </div>
+
+                    <!-- Play/Pause camera button -->
+                    <button id="btn-camera" class="absolute bottom-2 right-2 z-30 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 active:scale-95 text-[11px] font-bold text-white flex items-center gap-1 shadow-lg transition-all">
+                        <i class="fa-solid fa-video"></i> <span>開啟鏡頭</span>
+                    </button>
+                </div>
+
+                <!-- Quick tips or hand info overlay -->
+                <div class="glass-panel rounded-2xl p-3 w-44 md:w-full flex flex-col gap-1 text-center text-[11px] text-slate-400">
+                    <p class="font-bold text-slate-300"><i class="fa-solid fa-brain text-cyan-400"></i> 智慧辨識核心</p>
+                    <p>AI 即時估算手掌關鍵點</p>
+                    <div class="w-full bg-slate-800/80 h-1.5 rounded-full mt-1 overflow-hidden relative">
+                        <div id="openness-bar" class="bg-gradient-to-r from-violet-500 to-cyan-400 h-full w-[50%] transition-all duration-100"></div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('webgl-canvas');
+        let scene, camera, renderer;
+        let particles, geometry, material;
+        
+        // Configuration Parameters
+        const MAX_PARTICLES = 15000;
+        let currentShape = 'heart';
+        let customColor = new THREE.Color("#00d2ff");
+        let isRainbow = true;
+        let particleBaseSize = 3.5;
+        let baseRotationSpeed = 1.0;
+        
+        // Gesture responsiveness state (Smooth interpolation)
+        let targetOpenness = 0.5;
+        let currentOpenness = 0.5; // Lerped value
+        let lastRawOpenness = 0.5; // For detecting deliberate openness changes
+        let targetExpansion = 0.5; // Slider-only expansion (camera does not override)
+        let currentExpansion = 0.5; // Lerped expansion
+        let idleFrames = 0; // Frames since last openness change (for idle tilt)
+        
+        // Arrays for particle Morphing
+        const positions = new Float32Array(MAX_PARTICLES * 3);
+        const targetPositions = new Float32Array(MAX_PARTICLES * 3);
+        const velocities = new Float32Array(MAX_PARTICLES * 3);
+        const colors = new Float32Array(MAX_PARTICLES * 3);
+        const randomScales = new Float32Array(MAX_PARTICLES);
+        
+        // Initialize Scene
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x030306, 0.05);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.z = 8;
+
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setClearColor(scene.fog.color);
+
+            window.addEventListener('resize', onWindowResize);
+            
+            setupParticles();
+        }
+
+        // Generate gorgeous gradient glowing dot for particles
+        function createGlowTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            
+            // Draw radial glow gradient
+            const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            grad.addColorStop(0.2, 'rgba(235, 245, 255, 0.95)');
+            grad.addColorStop(0.5, 'rgba(120, 80, 255, 0.45)');
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 64, 64);
+            
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // Generators for shape coordinate targets
+
+        // 1. Refactored Volumetric 3D Elegant Heart Formula (Distinct puffed front/back & deep cleft)
+        function getHeartPoint(index) {
+            const t = -Math.PI + 2 * Math.PI * (index % 400) / 400;
+            const phi = -Math.PI / 2 + Math.PI * Math.floor(index / 400) / (MAX_PARTICLES / 400);
+
+            // True mathematical parametric heart outline
+            const xBase = 16 * Math.pow(Math.sin(t), 3);
+            const yBase = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+            
+            const scale = 0.18;
+            
+            // Depth Z: controlled by phi
+            const z = 1.3 * Math.sin(phi) * Math.cos(t / 2) * 1.1; 
+            
+            const puffFactor = 0.45 + 0.55 * Math.cos(phi);
+            const x = xBase * scale * puffFactor;
+            const y = yBase * scale * puffFactor;
+            
+            return new THREE.Vector3(x, y - 0.2, z);
+        }
+
+        // 2. Saturn System Formula (Spherical core + flat ring)
+        function getSaturnPoint(index) {
+            const ratio = index / MAX_PARTICLES;
+            if (ratio < 0.35) {
+                // Central Sphere Core
+                const u = Math.random();
+                const v = Math.random();
+                const theta = u * 2.0 * Math.PI;
+                const phi = Math.acos(2.0 * v - 1.0);
+                const r = 1.2 + Math.random() * 0.2;
+                return new THREE.Vector3(
+                    r * Math.sin(phi) * Math.cos(theta),
+                    r * Math.sin(phi) * Math.sin(theta),
+                    r * Math.cos(phi)
+                );
+            } else {
+                // Wide Concentric Ring
+                const angle = Math.random() * Math.PI * 2;
+                const r = 2.0 + Math.random() * 1.8;
+                const dispersionY = (Math.random() - 0.5) * 0.12;
+                const point = new THREE.Vector3(r * Math.cos(angle), dispersionY, r * Math.sin(angle));
+                point.applyAxisAngle(new THREE.Vector3(1, 0, 1).normalize(), 0.3); // Rotate slightly
+                return point;
+            }
+        }
+
+        // 3. Flower Formula (Rose curve/Torus model)
+        function getFlowerPoint(index) {
+            const theta = (index / MAX_PARTICLES) * Math.PI * 2 * 12;
+            const petals = 5;
+            const r = 2.0 * Math.sin(petals * (index / MAX_PARTICLES * Math.PI * 2)) + 1.2;
+            const phi = (Math.random() - 0.5) * 0.4;
+            
+            const x = r * Math.cos(theta) * Math.cos(phi);
+            const y = r * Math.sin(theta) * Math.cos(phi);
+            const z = r * Math.sin(phi) + Math.sin(theta * 3) * 0.5;
+            return new THREE.Vector3(x * 0.8, y * 0.8, z * 0.8);
+        }
+
+        // 4. Improved Fireworks Formula: Dense central sphere + 72 radiating linear trails
+        function getFireworksPoint(index) {
+            if (index % 5 === 0) {
+                // Dense Core Explosion
+                const u = Math.random();
+                const v = Math.random();
+                const theta = u * 2.0 * Math.PI;
+                const phi = Math.acos((Math.random() * 2) - 1);
+                const r = Math.pow(Math.random(), 2.0) * 0.7; 
+                return new THREE.Vector3(
+                    r * Math.sin(phi) * Math.cos(theta),
+                    r * Math.sin(phi) * Math.sin(theta),
+                    r * Math.cos(phi)
+                );
+            } else {
+                // Radiating spark rays/trails using Fibonacci Sphere for uniform ray distribution
+                const numTrails = 72;
+                const trailId = index % numTrails;
+                
+                const goldenRatio = (Math.sqrt(5) + 1) / 2;
+                const theta = 2.0 * Math.PI * trailId / goldenRatio;
+                const phi = Math.acos(1.0 - 2.0 * (trailId + 0.5) / numTrails);
+
+                const dir = new THREE.Vector3(
+                    Math.sin(phi) * Math.cos(theta),
+                    Math.sin(phi) * Math.sin(theta),
+                    Math.cos(phi)
+                );
+
+                // Particle position along the trail (mimic speed decay with power function)
+                const t = 0.15 + 3.0 * Math.pow(Math.random(), 0.5); 
+
+                // Perpendicular dispersion (simulating expanding dust/smoke in the trail)
+                const spread = 0.05 * t;
+                const offset = new THREE.Vector3(
+                    (Math.random() - 0.5) * spread,
+                    (Math.random() - 0.5) * spread,
+                    (Math.random() - 0.5) * spread
+                );
+
+                return new THREE.Vector3(
+                    dir.x * t + offset.x,
+                    dir.y * t + offset.y,
+                    dir.z * t + offset.z
+                );
+            }
+        }
+
+        // 5. Classic Sphere Formula
+        function getSpherePoint() {
+            const u = Math.random();
+            const v = Math.random();
+            const theta = u * 2.0 * Math.PI;
+            const phi = Math.acos(2.0 * v - 1.0);
+            const r = 2.6;
+            return new THREE.Vector3(
+                r * Math.sin(phi) * Math.cos(theta),
+                r * Math.sin(phi) * Math.sin(theta),
+                r * Math.cos(phi)
+            );
+        }
+
+        // 6. High-Fidelity Bio-Tech DNA Helix (With organic S-spine & exquisite interlaced overlap)
+        function getDNAPoint(index) {
+            const ratio = index / MAX_PARTICLES;
+            const height = 7.5;
+            const y = ratio * height - (height / 2); // Vertical range: -3.75 to 3.75
+            
+            // To match the reference webp design, the entire spinal axis has an elegant organic wave (S-curve)
+            const spineX = Math.sin(y * 0.65) * 1.1;
+            const spineZ = Math.cos(y * 0.5) * 0.35;
+            
+            const turns = 2.4; // Beautiful tight winding spirals
+            const baseAngle = ratio * Math.PI * 2 * turns;
+            
+            const radius = 1.25;
+            const separationAngle = 2.3; // Biological Major/Minor groove offset (~131 degrees)
+            
+            // Distribute particles:
+            // - 40% on Backbone Ribbon A
+            // - 40% on Backbone Ribbon B
+            // - 20% on perfectly perpendicular connecting base pairs (Rungs)
+            const part = index % 10;
+            
+            if (part < 4) {
+                // Backbone Strand A (Double-line ribbon structure)
+                const ribbonOffset = (part % 2 === 0) ? 0.12 : -0.12;
+                const theta = baseAngle + ribbonOffset;
+                const r = radius + (part % 2 === 0 ? 0.06 : -0.06);
+                
+                return new THREE.Vector3(
+                    spineX + r * Math.cos(theta),
+                    y,
+                    spineZ + r * Math.sin(theta)
+                );
+            } else if (part < 8) {
+                // Backbone Strand B (Double-line ribbon structure)
+                const ribbonOffset = (part % 2 === 0) ? 0.12 : -0.12;
+                const theta = baseAngle + separationAngle + ribbonOffset;
+                const r = radius + (part % 2 === 0 ? 0.06 : -0.06);
+                
+                return new THREE.Vector3(
+                    spineX + r * Math.cos(theta),
+                    y,
+                    spineZ + r * Math.sin(theta)
+                );
+            } else {
+                // Structured, tidy horizontal linking rungs (base-pairs)
+                const numRungs = 18; 
+                const rungIndex = Math.floor(ratio * numRungs);
+                const tRung = (rungIndex + 0.5) / numRungs; // Quantized height factor
+                
+                const rungY = tRung * height - (height / 2);
+                const rungAngle = tRung * Math.PI * 2 * turns;
+                
+                const rungSpineX = Math.sin(rungY * 0.65) * 1.1;
+                const rungSpineZ = Math.cos(rungY * 0.5) * 0.35;
+                
+                // Endpoints connecting Strand A and Strand B
+                const posA = new THREE.Vector3(
+                    rungSpineX + radius * Math.cos(rungAngle),
+                    rungY,
+                    rungSpineZ + radius * Math.sin(rungAngle)
+                );
+                const posB = new THREE.Vector3(
+                    rungSpineX + radius * Math.cos(rungAngle + separationAngle),
+                    rungY,
+                    rungSpineZ + radius * Math.sin(rungAngle + separationAngle)
+                );
+                
+                const lerpFactor = Math.random();
+                const point = new THREE.Vector3().lerpVectors(posA, posB, lerpFactor);
+                
+                const noiseAngle = Math.random() * Math.PI * 2;
+                const thickness = 0.04;
+                point.x += Math.cos(noiseAngle) * thickness;
+                point.z += Math.sin(noiseAngle) * thickness;
+                
+                return point;
+            }
+        }
+
+        function setupParticles() {
+            geometry = new THREE.BufferGeometry();
+            
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                const pos = getHeartPoint(i);
+                
+                positions[i * 3] = pos.x;
+                positions[i * 3 + 1] = pos.y;
+                positions[i * 3 + 2] = pos.z;
+                
+                targetPositions[i * 3] = pos.x;
+                targetPositions[i * 3 + 1] = pos.y;
+                targetPositions[i * 3 + 2] = pos.z;
+                
+                velocities[i * 3] = (Math.random() - 0.5) * 0.01;
+                velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.01;
+                velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.01;
+                
+                updateStaticColor(i);
+                
+                randomScales[i] = 0.5 + Math.random() * 0.5;
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            material = new THREE.PointsMaterial({
+                size: particleBaseSize * 0.06,
+                vertexColors: true,
+                map: createGlowTexture(),
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        // Static fallback for updating colors when rainbow is disabled
+        function updateStaticColor(i) {
+            colors[i * 3] = customColor.r;
+            colors[i * 3 + 1] = customColor.g;
+            colors[i * 3 + 2] = customColor.b;
+        }
+
+        // Highly optimized dynamic color morpher (Invoked in the render loop for flowing gradients)
+        function animateFlowingColors(elapsedTime) {
+            if (!isRainbow) return;
+            
+            const colorAttr = geometry.attributes.color;
+            const colorsArray = colorAttr.array;
+            
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                const i3 = i * 3;
+                let hue = 0;
+                
+                if (currentShape === 'dna') {
+                    // Exquisite dynamic dual-color flow for DNA Backbones and bright white-blue rungs
+                    const part = i % 10;
+                    const ratio = i / MAX_PARTICLES;
+                    
+                    if (part < 4) {
+                        // Strand A: Elegant electric turquoise to deep cyan flow
+                        hue = (180 + ratio * 60 + elapsedTime * 20) % 360;
+                        const tempColor = new THREE.Color(`hsl(${hue}, 95%, 55%)`);
+                        colorsArray[i3] = tempColor.r;
+                        colorsArray[i3 + 1] = tempColor.g;
+                        colorsArray[i3 + 2] = tempColor.b;
+                    } else if (part < 8) {
+                        // Strand B: Glowing indigo to magenta flow (Creating perfect cross-contrasts)
+                        hue = (250 + ratio * 60 + elapsedTime * 20) % 360;
+                        const tempColor = new THREE.Color(`hsl(${hue}, 95%, 55%)`);
+                        colorsArray[i3] = tempColor.r;
+                        colorsArray[i3 + 1] = tempColor.g;
+                        colorsArray[i3 + 2] = tempColor.b;
+                    } else {
+                        // Horizontal Connecting Rungs: Pure highly glowing electric-white
+                        const tempColor = new THREE.Color("#e0f7ff");
+                        colorsArray[i3] = tempColor.r;
+                        colorsArray[i3 + 1] = tempColor.g;
+                        colorsArray[i3 + 2] = tempColor.b;
+                    }
+                } else {
+                    // Universal smooth fluid flowing rainbow gradient waves
+                    const ratio = i / MAX_PARTICLES;
+                    hue = (ratio * 180 + elapsedTime * 25) % 360; // 25deg color shift per second
+                    const tempColor = new THREE.Color(`hsl(${hue}, 90%, 60%)`);
+                    colorsArray[i3] = tempColor.r;
+                    colorsArray[i3 + 1] = tempColor.g;
+                    colorsArray[i3 + 2] = tempColor.b;
+                }
+            }
+            colorAttr.needsUpdate = true;
+        }
+
+        function triggerAllStaticColors() {
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                updateStaticColor(i);
+            }
+            geometry.attributes.color.needsUpdate = true;
+        }
+
+        function morphToShape(shapeName) {
+            currentShape = shapeName;
+            
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                let targetVec;
+                
+                switch (shapeName) {
+                    case 'heart':
+                        targetVec = getHeartPoint(i);
+                        break;
+                    case 'saturn':
+                        targetVec = getSaturnPoint(i);
+                        break;
+                    case 'flower':
+                        targetVec = getFlowerPoint(i);
+                        break;
+                    case 'fireworks':
+                        targetVec = getFireworksPoint(i);
+                        break;
+                    case 'sphere':
+                        targetVec = getSpherePoint();
+                        break;
+                    case 'dna':
+                        targetVec = getDNAPoint(i);
+                        break;
+                }
+                
+                targetPositions[i * 3] = targetVec.x;
+                targetPositions[i * 3 + 1] = targetVec.y;
+                targetPositions[i * 3 + 2] = targetVec.z;
+            }
+            
+            // Force reset when disabling rainbow
+            if (!isRainbow) {
+                triggerAllStaticColors();
+            }
+        }
+
+        let clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const elapsedTime = clock.getElapsedTime();
+            currentOpenness += (targetOpenness - currentOpenness) * 0.25;
+            currentExpansion += (targetExpansion - currentExpansion) * 0.15;
+            
+            // Render flowing live gradient maps
+            if (isRainbow) {
+                animateFlowingColors(elapsedTime);
+            }
+            
+            const posAttr = geometry.attributes.position;
+            const posArray = posAttr.array;
+            
+            const expansionForce = currentOpenness * 2.2;
+            const turbulence = currentOpenness * 0.4;
+            
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                const i3 = i * 3;
+                
+                const tx = targetPositions[i3];
+                const ty = targetPositions[i3 + 1];
+                const tz = targetPositions[i3 + 2];
+                
+                const dir = new THREE.Vector3(tx, ty, tz).normalize();
+                
+                // Beautiful fluid morph interpolation with hand offset (lerping)
+                posArray[i3] += (tx + dir.x * expansionForce + Math.sin(elapsedTime * 2 + i) * turbulence - posArray[i3]) * 0.15;
+                posArray[i3 + 1] += (ty + dir.y * expansionForce + Math.cos(elapsedTime * 1.5 + i) * turbulence - posArray[i3 + 1]) * 0.15;
+                posArray[i3 + 2] += (tz - posArray[i3 + 2]) * 0.15;
+            }
+            
+            posAttr.needsUpdate = true;
+            
+            idleFrames++;
+            
+            // Rotation speed: open hand = faster, fist = slower
+            const speedModifier = 1.0 + currentOpenness * 2.0;
+            particles.rotation.y += 0.005 * baseRotationSpeed * speedModifier;
+            
+            // Orbital tilt only when idle (no hand or no openness change for ~2 sec)
+            const tiltActive = idleFrames > 120;
+            particles.rotation.x = tiltActive ? Math.sin(elapsedTime * 0.15) * 0.04 : 0;
+            
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        const videoElement = document.getElementById('webcam-video');
+        const skeletonCanvas = document.getElementById('skeleton-canvas');
+        const canvasCtx = skeletonCanvas.getContext('2d');
+        const cameraLoading = document.getElementById('camera-loading');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const opennessBar = document.getElementById('openness-bar');
+        
+        let isCamActive = false;
+        let activeCameraStream = null;
+        let mpCamera = null;
+        let handsDetector = null;
+
+        skeletonCanvas.width = 320;
+        skeletonCanvas.height = 240;
+
+        function initMediaPipe() {
+            handsDetector = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            handsDetector.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            handsDetector.onResults(onHandResults);
+        }
+
+        // Helper function to calculate 3D Euclidean Distance
+        function getDistance3D(pt1, pt2) {
+            return Math.sqrt(
+                Math.pow(pt1.x - pt2.x, 2) + 
+                Math.pow(pt1.y - pt2.y, 2) + 
+                Math.pow(pt1.z - pt2.z, 2)
+            );
+        }
+
+        function onHandResults(results) {
+            canvasCtx.clearRect(0, 0, skeletonCanvas.width, skeletonCanvas.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+                document.getElementById('gesture-status').classList.add('glow-active');
+                
+                const landmarks = results.multiHandLandmarks[0];
+                drawSkeleton(landmarks);
+                
+                // --- 1. Robust Normalized Openness Algorithm (Palm-Size Metric) ---
+                // We use the distance from wrist (0) to middle finger root (9) as our stable normalizer.
+                const palmScale = getDistance3D(landmarks[0], landmarks[9]);
+                
+                const fingers = [
+                    { tip: 8,  mcp: 5 },  // Index Finger
+                    { tip: 12, mcp: 9 },  // Middle Finger
+                    { tip: 16, mcp: 13 }, // Ring Finger
+                    { tip: 20, mcp: 17 }  // Pinky Finger
+                ];
+                
+                let sumRatio = 0;
+                for (let f of fingers) {
+                    const tipJoint = landmarks[f.tip];
+                    const mcpJoint = landmarks[f.mcp];
+                    const d = getDistance3D(tipJoint, mcpJoint);
+                    sumRatio += (d / (palmScale + 0.001));
+                }
+                const avgRatio = sumRatio / 4;
+                
+                // Calibration Boundaries:
+                // Tight fist ratio typically rests around 0.35 - 0.45 (fingertips near knuckles).
+                // Fully open hand ratio easily expands to 1.25 - 1.55.
+                // We map [0.5, 1.1] directly to [0.0, 1.0] for ultra responsiveness!
+                let normValue = (avgRatio - 0.5) / 0.6;
+                normValue = Math.max(0.0, Math.min(1.0, normValue));
+                
+                // Smooth openness with EMA + threshold to prevent noise but allow slow changes
+                lastRawOpenness = lastRawOpenness * 0.7 + normValue * 0.3;
+                if (Math.abs(lastRawOpenness - targetOpenness) > 0.05) {
+                    targetOpenness = lastRawOpenness;
+                    idleFrames = 0;
+                }
+
+                const isMoving = false;
+                if (targetOpenness > 0.65) {
+                    statusText.textContent = `開掌中 (${Math.round(targetOpenness * 100)}%)`;
+                } else if (targetOpenness < 0.2) {
+                    statusText.textContent = `握拳中 (${Math.round(targetOpenness * 100)}%)`;
+                } else {
+                    statusText.textContent = `半張合 (${Math.round(targetOpenness * 100)}%)`;
+                }
+                
+                opennessBar.style.width = `${Math.round(targetOpenness * 100)}%`;
+            } else {
+                statusDot.className = "w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse";
+                statusText.textContent = "未偵測到手掌";
+                document.getElementById('gesture-status').classList.remove('glow-active');
+                
+                const simSliderValue = document.getElementById('slider-openness').value;
+                targetOpenness = simSliderValue / 100;
+                opennessBar.style.width = `${simSliderValue}%`;
+            }
+        }
+
+        function drawSkeleton(landmarks) {
+            canvasCtx.strokeStyle = "#8b5cf6";
+            canvasCtx.lineWidth = 3;
+            canvasCtx.fillStyle = "#22d3ee";
+            
+            const connections = [
+                [0, 1], [1, 2], [2, 3], [3, 4],
+                [0, 5], [5, 6], [6, 7], [7, 8],
+                [5, 9], [9, 10], [10, 11], [11, 12],
+                [9, 13], [13, 14], [14, 15], [15, 16],
+                [13, 17], [17, 18], [18, 19], [19, 20],
+                [0, 17]
+            ];
+
+            for (let path of connections) {
+                const ptA = landmarks[path[0]];
+                const ptB = landmarks[path[1]];
+                
+                canvasCtx.beginPath();
+                canvasCtx.moveTo(ptA.x * skeletonCanvas.width, ptA.y * skeletonCanvas.height);
+                canvasCtx.lineTo(ptB.x * skeletonCanvas.width, ptB.y * skeletonCanvas.height);
+                canvasCtx.stroke();
+            }
+
+            for (let i = 0; i < landmarks.length; i++) {
+                const pt = landmarks[i];
+                canvasCtx.beginPath();
+                canvasCtx.arc(pt.x * skeletonCanvas.width, pt.y * skeletonCanvas.height, 4, 0, 2 * Math.PI);
+                canvasCtx.fillStyle = i % 4 === 0 ? "#22d3ee" : "#ec4899";
+                canvasCtx.fill();
+            }
+        }
+
+        async function startWebcam() {
+            cameraLoading.style.opacity = "1";
+            cameraLoading.style.display = "flex";
+            
+            try {
+                activeCameraStream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        width: 320,
+                        height: 240,
+                        facingMode: "user"
+                    }
+                });
+                
+                videoElement.srcObject = activeCameraStream;
+                videoElement.style.display = "block";
+                videoElement.play();
+                
+                mpCamera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        await handsDetector.send({image: videoElement});
+                    },
+                    width: 320,
+                    height: 240
+                });
+                
+                await mpCamera.start();
+                
+                isCamActive = true;
+                cameraLoading.style.opacity = "0";
+                setTimeout(() => cameraLoading.style.display = "none", 300);
+                
+                document.getElementById('btn-camera').innerHTML = `<i class="fa-solid fa-video-slash"></i> <span>關閉鏡頭</span>`;
+                document.getElementById('btn-camera').className = "absolute bottom-2 right-2 z-30 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 active:scale-95 text-[11px] font-bold text-white flex items-center gap-1 shadow-lg transition-all";
+                
+                document.getElementById('simulation-container').style.opacity = "0.4";
+            } catch (err) {
+                console.warn("Could not activate camera: ", err);
+                cameraLoading.style.display = "none";
+                const toast = document.getElementById('tutorial-toast');
+                if (toast) {
+                    toast.querySelector('p').textContent = "相機連線失敗";
+                    toast.querySelectorAll('p')[1].innerHTML = "無法存取相機。請使用下方的<span class='text-violet-400'>手勢模擬滑桿</span>操作。";
+                }
+            }
+        }
+
+        function stopWebcam() {
+            if (activeCameraStream) {
+                activeCameraStream.getTracks().forEach(track => track.stop());
+            }
+            if (mpCamera) {
+                mpCamera.stop();
+            }
+            videoElement.style.display = "none";
+            canvasCtx.clearRect(0, 0, skeletonCanvas.width, skeletonCanvas.height);
+            
+            isCamActive = false;
+            lastRawOpenness = 0.5;
+            document.getElementById('btn-camera').innerHTML = `<i class="fa-solid fa-video"></i> <span>開啟鏡頭</span>`;
+            document.getElementById('btn-camera').className = "absolute bottom-2 right-2 z-30 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 active:scale-95 text-[11px] font-bold text-white flex items-center gap-1 shadow-lg transition-all";
+            
+            document.getElementById('simulation-container').style.opacity = "1";
+            
+            statusDot.className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse";
+            statusText.textContent = "相機已關閉";
+            document.getElementById('gesture-status').classList.remove('glow-active');
+            
+            const simSliderValue = document.getElementById('slider-openness').value;
+            targetOpenness = simSliderValue / 100;
+        }
+
+        function setupUI() {
+            const shapeButtons = document.querySelectorAll('.shape-btn');
+            
+            shapeButtons.forEach(btn => {
+                const shape = btn.getAttribute('data-shape');
+                if (shape === currentShape) {
+                    btn.classList.add('border-violet-500', 'bg-violet-500/20', 'text-white');
+                }
+                
+                btn.addEventListener('click', () => {
+                    shapeButtons.forEach(b => b.classList.remove('border-violet-500', 'bg-violet-500/20', 'text-white'));
+                    btn.classList.add('border-violet-500', 'bg-violet-500/20', 'text-white');
+                    morphToShape(shape);
+                });
+            });
+
+            document.getElementById('btn-camera').addEventListener('click', () => {
+                if (isCamActive) {
+                    stopWebcam();
+                } else {
+                    startWebcam();
+                }
+            });
+
+            const opennessSlider = document.getElementById('slider-openness');
+            opennessSlider.addEventListener('input', (e) => {
+                const val = e.target.value;
+                document.getElementById('val-openness').textContent = `${val}%`;
+                targetExpansion = val / 100;
+                if (!isCamActive) {
+                    targetOpenness = val / 100;
+                    opennessBar.style.width = `${val}%`;
+                }
+            });
+
+            const colorPicker = document.getElementById('particle-color');
+            colorPicker.addEventListener('input', (e) => {
+                customColor = new THREE.Color(e.target.value);
+                document.getElementById('rainbow-toggle').checked = false;
+                isRainbow = false;
+                triggerAllStaticColors();
+            });
+
+            document.getElementById('rainbow-toggle').addEventListener('change', (e) => {
+                isRainbow = e.target.checked;
+                if (!isRainbow) {
+                    triggerAllStaticColors();
+                }
+            });
+
+            document.getElementById('slider-p-size').addEventListener('input', (e) => {
+                const size = parseFloat(e.target.value);
+                document.getElementById('val-p-size').textContent = size.toFixed(1);
+                material.size = size * 0.055;
+            });
+
+            document.getElementById('slider-rot-speed').addEventListener('input', (e) => {
+                const speed = parseFloat(e.target.value);
+                document.getElementById('val-rot-speed').textContent = `${speed.toFixed(1)}x`;
+                baseRotationSpeed = speed;
+            });
+
+            document.getElementById('btn-fullscreen').addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().then(() => {
+                        document.getElementById('btn-fullscreen').innerHTML = `<i class="fa-solid fa-compress"></i>`;
+                    }).catch(err => console.log(err));
+                } else {
+                    document.exitFullscreen().then(() => {
+                        document.getElementById('btn-fullscreen').innerHTML = `<i class="fa-solid fa-expand"></i>`;
+                    });
+                }
+            });
+
+            // Collapsible Left Panel UI Toggle
+            const leftPanel = document.getElementById('left-panel');
+            const leftPanelHeader = document.getElementById('left-panel-header');
+            const leftPanelBody = document.getElementById('left-panel-body');
+            const leftPanelIcon = document.getElementById('left-panel-icon');
+            let isLeftCollapsed = false;
+
+            leftPanelHeader.addEventListener('click', () => {
+                isLeftCollapsed = !isLeftCollapsed;
+                if (isLeftCollapsed) {
+                    leftPanel.classList.add('panel-collapsed');
+                    leftPanelBody.classList.add('opacity-0', 'pointer-events-none');
+                    leftPanelIcon.className = "fa-solid fa-chevron-up";
+                } else {
+                    leftPanel.classList.remove('panel-collapsed');
+                    leftPanelBody.classList.remove('opacity-0', 'pointer-events-none');
+                    leftPanelIcon.className = "fa-solid fa-chevron-down";
+                }
+            });
+
+            // Hide/Show Right Camera Panel Toggle
+            const rightPanel = document.getElementById('right-panel');
+            const btnToggleCamera = document.getElementById('btn-toggle-camera');
+            const cameraPanelIcon = document.getElementById('camera-panel-icon');
+            let isCameraPanelHidden = false;
+
+            btnToggleCamera.addEventListener('click', () => {
+                isCameraPanelHidden = !isCameraPanelHidden;
+                if (isCameraPanelHidden) {
+                    rightPanel.classList.add('panel-hidden');
+                    cameraPanelIcon.className = "fa-solid fa-eye-slash";
+                } else {
+                    rightPanel.classList.remove('panel-hidden');
+                    cameraPanelIcon.className = "fa-solid fa-eye";
+                }
+            });
+        }
+
+        window.onload = function() {
+            initThree();
+            initMediaPipe();
+            setupUI();
+            
+            const defaultSimValue = document.getElementById('slider-openness').value;
+            targetOpenness = defaultSimValue / 100;
+            currentOpenness = targetOpenness;
+            lastRawOpenness = targetOpenness;
+            targetExpansion = defaultSimValue / 100;
+            currentExpansion = targetExpansion;
+            
+            animate();
+        };
+    </script>
+</body>
+</html>
