@@ -1,4 +1,4 @@
-# 3d_interactive_particle_system
+# 3D_interactive_particle_system
 🚀 快速開始与運行
 本專案為純前端架構（無後端依賴），您可以透過以下幾種方式直接運行：
 
